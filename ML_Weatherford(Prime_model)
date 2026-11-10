@@ -1,0 +1,129 @@
+import pandas as pd
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import numpy as np
+
+
+#данные из отчётов Weatherford, очищены от пустых строк, 551 замер.
+df = pd.read_csv("combined_drilling.csv")
+
+# Сортирую все по глубине, так как в бурении свечки идут по порядку, если нет сортировки то прошлый угол и азимут неизвестен
+df = df.sort_values('depth').reset_index(drop=True)
+print(df['slide_fact'].describe()) #смотрю распределение по среднему, медиане и так далее..
+df = df[df['slide_fact'] < 25] #фильтр выбросов, в среднем свечка 25 метров длиной, т.е слайд не может быть более 25 метров
+
+
+#Создаю признаки (предыдущие значения) ---- shift(1) = «что было в прошлый раз»
+df['prev_inc'] = df['inc'].shift(1) #если угол растёт — нужен слайд, если стабилен — нет.
+df['prev_azi'] = df['azi'].shift(1) #тоже самое с азимутом
+df['prev_slide'] = df['slide_fact'].shift(1) # сколько слайда делали в прошлый раз. 
+df['delta_inc'] = df['inc'] - df['prev_inc']  # изменение угла
+df['prev_dls'] = df['dls'].shift(1)           # предыдущий DLS
+df['delta_azi'] = df['azi'] - df['prev_azi']  # изменение азимута
+df['prev_rop'] = df['rop'].shift(1)   #скорость проходки прошлой свечки)
+df['slide_ratio'] = df['prev_slide'] / df['prev_inc'].replace(0, np.nan)  # эффективность прошлого слайда
+
+
+#Заполняю пропуски в параметрах (rotate, rpm, wob) медианой -----Медиана — устойчива (не тянется выбросами)
+for col in ['rotate', 'rpm', 'wob']:
+    if col in df.columns:
+        df[col] = df[col].fillna(df[col].median())
+
+
+#Удаляю первую строку (у неё нет "прошлого")
+df = df.dropna(subset=['prev_inc', 'prev_azi', 'prev_slide'])
+
+#Выбираю признаки (X) и цель (y)
+X_cols = ['depth', 'inc', 'azi', 'prev_dls', 'rotate', 'rpm', 'wob', 'rop', 'flow',
+          'prev_inc', 'prev_azi', 'prev_slide', 'delta_inc', 'prev_rop']
+X = df[X_cols]
+y = df['slide_fact']
+X = X.fillna(X.median()) #заполняю оставшиеся NaN
+
+#хронологический split, не random — иначе утечка из будущего (модель „подсмотрит" будущие свечки)
+split_idx = int(len(df) * 0.8) # 80% — train
+X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:] # ПЕРВЫЕ 80% (ранние свечки)
+y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:] # ПОСЛЕДНИЕ 20% (поздние свечки)
+
+print(f"Train: {X_train.shape}, Test: {X_test.shape}")
+print("Осталось NaN в X:", X.isna().sum().sum())   
+
+# тупая модель — всегда предсказывает среднее (по train). Считаем MAE. Если модель не бьёт baseline — она бесполезна (лучше «среднее»).
+baseline_pred = np.full_like(y_test, y_train.mean())
+print(f"Baseline MAE: {mean_absolute_error(y_test, baseline_pred):.2f}")
+
+# LinearRegression
+lr = LinearRegression()
+lr.fit(X_train, y_train)
+print(f"LinearRegression MAE: {mean_absolute_error(y_test, lr.predict(X_test)):.2f}")
+# Вывод: линейная зависимость не работает
+
+# RandomForest 100 деревьев решений, голосуют (среднее). Нелинейная модель
+rf = RandomForestRegressor(n_estimators=100, random_state=42)
+rf.fit(X_train, y_train)
+y_pred_rf = rf.predict(X_test)
+print(f"RandomForest MAE: {mean_absolute_error(y_test, y_pred_rf):.2f}, R²: {r2_score(y_test, y_pred_rf):.2f}")
+
+# GradientBoosting последовательные деревья — каждое исправляет ошибки предыдущего
+gb = GradientBoostingRegressor(n_estimators=100, max_depth=3, random_state=42)
+gb.fit(X_train, y_train)
+y_pred_gb = gb.predict(X_test)
+print(f"GradientBoosting MAE: {mean_absolute_error(y_test, y_pred_gb):.2f}, R²: {r2_score(y_test, y_pred_gb):.2f}")
+
+# Важность (GB)
+import pandas as pd
+imp = pd.DataFrame({'feature': X_cols, 'importance': gb.feature_importances_}).sort_values('importance', ascending=False)
+print(imp)
+
+
+imp = pd.DataFrame({'feature': X_cols, 'importance': gb.feature_importances_}).sort_values('importance')
+plt.figure(figsize=(10, 6))
+plt.barh(imp['feature'], imp['importance'])
+plt.title("Важность признаков (GradientBoosting)")
+plt.xlabel("Важность")
+plt.tight_layout()
+plt.savefig("feature_importance.png")
+plt.close()
+
+plt.figure(figsize=(8, 8))
+plt.scatter(y_test, y_pred_gb, alpha=0.5)
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', label='Идеал')
+plt.xlabel("Реальные метры слайда")
+plt.ylabel("Предсказанные метры слайда")
+plt.title("GradientBoosting: предсказание vs реальность")
+plt.legend()
+plt.tight_layout()
+plt.savefig("pred_vs_real.png")
+plt.close()
+
+import joblib
+joblib.dump(gb, "slide_model_gb.pkl")
+
+model = joblib.load("slide_model_gb.pkl")
+
+# ВОЗЬМЕМ ОДНУ строку из X_test (как «новый» замер)
+sample = X_test.iloc[[0]]
+pred = model.predict(sample)[0]
+real = y_test.iloc[0]
+print(f"Предсказание: {pred:.2f} м, реально: {real:.2f} м")
+
+def predict_slide(depth, inc, azi, rop, flow, rpm, wob,
+                  prev_inc, prev_azi, prev_slide, prev_dls, prev_rop,
+                  delta_inc, rotate):
+    X_new = pd.DataFrame([{
+        "depth": depth, "inc": inc, "azi": azi, "rop": rop,
+        "flow": flow, "rpm": rpm, "wob": wob,
+        "prev_inc": prev_inc, "prev_azi": prev_azi,
+        "prev_slide": prev_slide, "prev_dls": prev_dls,
+        "prev_rop": prev_rop, "delta_inc": delta_inc, "rotate": rotate
+    }])[X_cols]
+    return model.predict(X_new)[0]
+
+#Сюда инженер записывает параметры бурения:
+print(f"Слайд: {predict_slide(2634, 20.09, 186.56, 70, 32, 40, 10, 18.08, 189.67, 4, 0.5, 70, 0.4, 150):.1f} м")

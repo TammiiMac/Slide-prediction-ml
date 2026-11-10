@@ -1,0 +1,54 @@
+import pandas as pd
+
+
+titanic = pd.read_csv("Titanic_dataset.csv")
+
+print(titanic[["Pclass", "Age", "SibSp", "Parch", "Fare", "Sex", "Survived"]].head())
+print(titanic.isna().sum())
+
+titanic["Age"] = titanic["Age"].fillna(titanic["Age"].median())
+print(titanic["Age"].isna().sum()) 
+
+titanic["Sex_num"] = (titanic["Sex"] == "female").astype(int)
+print(titanic[["Sex", "Sex_num"]].head())
+
+
+X = titanic[["Pclass", "Age", "SibSp", "Parch", "Fare", "Sex_num"]]
+y = titanic["Survived"]
+
+from sklearn.model_selection import train_test_split
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+
+print(X_train.shape)
+print(X_test.shape)
+
+
+from sklearn.linear_model import LogisticRegression
+
+model = LogisticRegression(max_iter=1000)
+model.fit(X_train, y_train)
+
+y_pred = model.predict(X_test)
+
+from sklearn.metrics import accuracy_score
+
+print("Accuracy:", accuracy_score(y_test, y_pred))
+
+
+from sklearn.metrics import precision_score, recall_score
+
+print("Precision:", precision_score(y_test, y_pred))
+print("Recall:", recall_score(y_test, y_pred))
+
+
+
+coefs = pd.DataFrame({
+    "feature": X.columns,
+    "coef": model.coef_[0]
+}).sort_values("coef", ascending=False)
+
+print(coefs)

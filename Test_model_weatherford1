@@ -1,0 +1,36 @@
+import pandas as pd
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import numpy as np
+import joblib
+
+
+
+model = joblib.load("slide_model_gb.pkl")
+
+# возьми ОДНУ строку из X_test (как «новый» замер)
+sample = X_test.iloc[[0]]
+pred = model.predict(sample)[0]
+real = y_test.iloc[0]
+print(f"Предсказание: {pred:.2f} м, реально: {real:.2f} м")
+
+def predict_slide(depth, inc, azi, rop, flow, rpm, wob,
+                  prev_inc, prev_azi, prev_slide, prev_dls, prev_rop,
+                  delta_inc, rotate):
+    X_new = pd.DataFrame([{
+        "depth": depth, "inc": inc, "azi": azi, "rop": rop,
+        "flow": flow, "rpm": rpm, "wob": wob,
+        "prev_inc": prev_inc, "prev_azi": prev_azi,
+        "prev_slide": prev_slide, "prev_dls": prev_dls,
+        "prev_rop": prev_rop, "delta_inc": delta_inc, "rotate": rotate
+    }])[X_cols]
+    return model.predict(X_new)[0]
+
+#Нужно чтобы инженер вызывл:
+print(f"Слайд: {predict_slide(2634, 20.09, 186.56, 70, 32, 40, 10, 18.08, 189.67, 4, 0.5, 70, 0.4, 150):.1f} м")

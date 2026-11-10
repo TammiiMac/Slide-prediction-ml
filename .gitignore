@@ -1,0 +1,5 @@
+Drill_test_ML/
+*.xlsm
+*.xlsx
+__pycache__/
+*.pyc

@@ -1,0 +1,121 @@
+import pandas as pd
+
+"""# Загружаю, указывая, что шапка в строке 10 (0-индексация)
+df = pd.read_excel("drill1.xlsm", sheet_name="SLIDE SHEET", header=10)
+
+#Удаляю первые две строки (это русские подписи и Grid), они мне нужны
+df = df.iloc[2:].reset_index(drop=True)
+
+# Смотрю, какие колонки получились
+print(df.columns.tolist())
+
+#Оставляю только нужные колонки (без Unnamed)
+keep_cols = [
+    'Date', 'MD', 'Inc', 'Azimuth', 'DLS',
+    'Slide / Направленно', 'Слайда вошло в замер', 'На 1 м слайда',
+    'Rotate / Ротором', 'RPM', 'WOB, ton', 'ROP', 'Flow',
+    'Comments / Комментарии'
+]
+df = df[keep_cols].copy()
+
+# Переименовываю для удобства
+df.columns = [
+    'date', 'depth', 'inc', 'azi', 'dls',
+    'slide_plan', 'slide_fact', 'slide_eff',
+    'rotate', 'rpm', 'wob', 'rop', 'flow',
+    'comments'
+]
+
+# Протягиваю дату вниз (ffill)
+df['date'] = df['date'].ffill()
+
+# превращаю числовые колонки в числа (текст → NaN)
+num_cols = ['depth', 'inc', 'azi', 'dls', 'slide_plan', 'slide_fact', 'slide_eff',
+            'rotate', 'rpm', 'wob', 'rop', 'flow']
+for col in num_cols:
+    df[col] = pd.to_numeric(df[col], errors='coerce')
+
+# Удаляю строки, где нет ключевых колонок (depth, inc, azi)
+df = df.dropna(subset=['depth', 'inc', 'azi'])
+
+# Смотрю результат
+print(df.shape)
+print(df.head(10))
+print(df.dtypes)
+print(df.isna().sum())"""
+
+import pandas as pd
+import os
+import glob
+
+
+folder_path = "/home/Tammii/Python-practice/Drill_test_ML"
+
+#Нахожу все файлы .xlsm и .xlsx в папке
+files = glob.glob(os.path.join(folder_path, "*.xls*"))
+print(f"Найдено файлов: {len(files)}")
+
+all_data = []
+
+for file in files:
+    print(f"Обрабатываем: {os.path.basename(file)}")
+    try:
+        # Читаю лист 
+        # Если в каком-то файле лист называется иначе, скрипт выдаст ошибку, и я это увижу
+        df = pd.read_excel(file, sheet_name="SLIDE SHEET", header=10)
+        
+        # Пропускаю первые 2 строки (русские подписи и Grid)
+        df = df.iloc[2:].reset_index(drop=True)
+        
+        #Оставляю только нужные колонки
+        keep_cols = [
+            'Date', 'MD', 'Inc', 'Azimuth', 'DLS',
+            'Slide / Направленно', 'Слайда вошло в замер', 'На 1 м слайда',
+            'Rotate / Ротором', 'RPM', 'WOB, ton', 'ROP', 'Flow',
+            'Comments / Комментарии'
+        ]
+        
+        # Проверяю, есть ли все колонки в файле (чтобы скрипт не упал)
+        existing_cols = [c for c in keep_cols if c in df.columns]
+        df = df[existing_cols].copy()
+        
+        #Переименовываю (только те, что есть)
+        rename_dict = {
+            'Date': 'date', 'MD': 'depth', 'Inc': 'inc', 'Azimuth': 'azi', 'DLS': 'dls',
+            'Slide / Направленно': 'slide_plan', 'Слайда вошло в замер': 'slide_fact', 
+            'На 1 м слайда': 'slide_eff', 'Rotate / Ротором': 'rotate', 'RPM': 'rpm', 
+            'WOB, ton': 'wob', 'ROP': 'rop', 'Flow': 'flow', 'Comments / Комментарии': 'comments'
+        }
+        df = df.rename(columns=rename_dict)
+        
+        # Добавляю колонку с именем файла (чтобы потом понимать, откуда данные)
+        df['source_file'] = os.path.basename(file)
+        
+        all_data.append(df)
+        
+    except Exception as e:
+        print(f"Ошибка с файлом {os.path.basename(file)}: {e}")
+
+# Склеиваю все датафреймы в один
+if all_data:
+    combined_df = pd.concat(all_data, ignore_index=True)
+    print(f"\nОбщий размер до чистки: {combined_df.shape}")
+    
+    #Чищу типы данных (текст -> числа)
+    num_cols = ['depth', 'inc', 'azi', 'dls', 'slide_plan', 'slide_fact', 'slide_eff',
+                'rotate', 'rpm', 'wob', 'rop', 'flow']
+    for col in num_cols:
+        if col in combined_df.columns:
+            combined_df[col] = pd.to_numeric(combined_df[col], errors='coerce')
+            
+    #Протягиваю дату и удаляю строки без глубины
+    combined_df['date'] = combined_df['date'].ffill()
+    combined_df = combined_df.dropna(subset=['depth', 'inc', 'azi'])
+    
+    #Сохраняю в CSV (чтобы не перечитывать Excel каждый раз)
+    combined_df.to_csv("combined_drilling.csv", index=False)
+    print(f"Размер после чистки: {combined_df.shape}")
+    print("Файл combined_drilling.csv сохранён!")
+    
+else:
+    print("Не удалось.")
