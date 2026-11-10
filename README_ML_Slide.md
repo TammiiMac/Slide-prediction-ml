@@ -68,14 +68,14 @@
   проверить, улучшат ли.
 - **Данные анонимизированы** — реальные названия скважин убрал.
 
-## Как использовать
-```python
-import joblib
-model = joblib.load("slide_model_gb.pkl")
-pred = model.predict(X_new)  # X_new — DataFrame с 14 признаками
-
 ## Что дальше
 - Собрать **больше данных** (другие скважины) — **главное** (551 — мало).
 - Добавить `slide_ratio` и `delta_azi` (создал, но не проверил).
 - **Streamlit-дашборд** — чтобы инженер **вводил** параметры и **получал** рекомендацию.
 - Попробовать **LSTM** (временной ряд) — если данных станет больше.
+
+## Как использовать
+```python
+import joblib
+model = joblib.load("slide_model_gb.pkl")
+pred = model.predict(X_new)  # X_new — DataFrame с 14 признаками
